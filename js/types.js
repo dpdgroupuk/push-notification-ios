@@ -53,6 +53,11 @@ export type NotificationRequest = {|
    * Optional data to be added to the notification
    */
   userInfo?: Object,
+  /**
+   * Attachment url for image/video
+   * for now only one url is supported
+   */
+  attachmentUrl?: string,
 |};
 
 /**

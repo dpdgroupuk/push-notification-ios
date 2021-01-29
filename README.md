@@ -317,6 +317,7 @@ request is an object containing:
 - `category` : The category of this notification, required for actionable notifications.
 - `isSilent` : If true, the notification will appear without sound.
 - `userInfo` : An object containing additional notification data.
+- `attachmentUrl` Image or video url you want to display in notification (optional).
 
 ---
 
