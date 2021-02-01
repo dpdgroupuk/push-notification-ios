@@ -112,6 +112,19 @@ export const App = (): React.Node => {
     });
   };
 
+  const sendLocalNotificationWithImage = () => {
+    PushNotificationIOS.addNotificationRequest({
+      id: 'notificationWithImage',
+      title: 'Sample Title',
+      subtitle: 'Sample Subtitle',
+      body: 'Sample local notification with custom sound',
+      badge: 1,
+      userInfo: {
+        attachmentUrl: 'https://ru.react.js.org/logo-og.png',
+      },
+    });
+  };
+
   const scheduleLocalNotification = () => {
     PushNotificationIOS.scheduleLocalNotification({
       alertBody: 'Test Local Notification',
@@ -200,7 +213,7 @@ export const App = (): React.Node => {
     ]);
     Alert.alert(
       'setNotificationCategories',
-      `Set notification category complete`,
+      'Set notification category complete',
       [
         {
           text: 'Dismiss',
@@ -309,6 +322,10 @@ export const App = (): React.Node => {
       <Button
         onPress={sendLocalNotificationWithSound}
         label="Send fake local notification with custom sound"
+      />
+      <Button
+        onPress={sendLocalNotificationWithImage}
+        label="Send fake local notification with image"
       />
       <Button
         onPress={scheduleLocalNotification}
