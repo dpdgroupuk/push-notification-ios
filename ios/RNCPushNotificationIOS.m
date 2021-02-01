@@ -148,7 +148,7 @@ API_AVAILABLE(ios(10.0)) {
     }
     self.remoteNotificationCallbacks[notificationId] = completionHandler;
   }
-  
+
   [self sendEventWithName:@"remoteNotificationReceived" body:remoteNotification];
 }
 
@@ -166,6 +166,86 @@ API_AVAILABLE(ios(10.0)) {
     @"details": error.userInfo,
   };
   [self sendEventWithName:@"remoteNotificationRegistrationError" body:errorDetails];
+}
+
+- (void)fireNotificationRequest:(UNNotificationRequest*)request {
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    [center addNotificationRequest:request
+                withCompletionHandler:^(NSError* _Nullable error) {
+        if (!error) {
+            NSLog(@"notifier request success");
+            }
+        }
+    ];
+}
+
+// Extension to load notification attachment
+- (UNMutableNotificationContent *)notificationContentFromContent:(UNNotificationContent *)content {
+    UNMutableNotificationContent* newContent = [[UNMutableNotificationContent alloc] init];
+    newContent.title = content.title;
+    newContent.subtitle = content.subtitle;
+    newContent.body = content.body;
+    newContent.badge = content.badge;
+    newContent.categoryIdentifier = content.categoryIdentifier;
+    newContent.threadIdentifier = content.threadIdentifier;
+    newContent.userInfo = content.userInfo;
+    newContent.sound = content.sound;
+    return newContent;
+}
+
+- (void)loadAttachmentForURL:(NSURL *)attachmentURL
+           completionHandler:(void (^)(UNNotificationAttachment *))completionHandler {
+  __block UNNotificationAttachment *attachment = nil;
+
+    NSURLSessionConfiguration *configurations = [NSURLSessionConfiguration defaultSessionConfiguration];
+    configurations.requestCachePolicy = NSURLRequestReturnCacheDataElseLoad;
+  NSURLSession *session = [NSURLSession
+      sessionWithConfiguration:configurations];
+  [[session
+      downloadTaskWithURL:attachmentURL
+        completionHandler:^(NSURL *temporaryFileLocation, NSURLResponse *response, NSError *error) {
+          if (error != nil) {
+            completionHandler(attachment);
+            return;
+          }
+
+          NSFileManager *fileManager = [NSFileManager defaultManager];
+          NSString *fileExtension = [self fileExtensionForResponse:response];
+          NSURL *localURL = [NSURL
+              fileURLWithPath:[temporaryFileLocation.path stringByAppendingString:fileExtension]];
+          [fileManager moveItemAtURL:temporaryFileLocation toURL:localURL error:&error];
+          if (error) {
+            completionHandler(attachment);
+            return;
+          }
+
+          attachment = [UNNotificationAttachment attachmentWithIdentifier:@""
+                                                                      URL:localURL
+                                                                  options:nil
+                                                                    error:&error];
+          if (error) {
+            completionHandler(attachment);
+            return;
+          }
+          completionHandler(attachment);
+        }] resume];
+}
+
+- (NSString *)fileExtensionForResponse:(NSURLResponse *)response {
+  NSString *suggestedPathExtension = [response.suggestedFilename pathExtension];
+
+  if (suggestedPathExtension.length > 0) {
+    return [NSString stringWithFormat:@".%@", suggestedPathExtension];
+  }
+
+  NSString *imagePathPrefix = @"image/";
+
+  if ([response.MIMEType containsString:imagePathPrefix]) {
+    return [response.MIMEType stringByReplacingOccurrencesOfString:imagePathPrefix
+                                                        withString:@"."];
+  }
+
+  return @"";
 }
 
 RCT_EXPORT_METHOD(onFinishRemoteNotification:(NSString *)notificationId fetchResult:(UIBackgroundFetchResult)result)
@@ -197,10 +277,10 @@ RCT_EXPORT_METHOD(requestPermissions:(NSDictionary *)permissions
     reject(kErrorUnableToRequestPermissions, nil, RCTErrorWithMessage(@"Requesting push notifications is currently unavailable in an app extension"));
     return;
   }
-    
+
   // Add a listener to make sure that startObserving has been called
   [self addListener:@"remoteNotificationsRegistered"];
-  
+
   UNAuthorizationOptions types = UNAuthorizationOptionNone;
   if (permissions) {
     if ([RCTConvert BOOL:permissions[@"alert"]]) {
@@ -215,7 +295,7 @@ RCT_EXPORT_METHOD(requestPermissions:(NSDictionary *)permissions
   } else {
     types = UNAuthorizationOptionAlert | UNAuthorizationOptionBadge | UNAuthorizationOptionSound;
   }
-  
+
   [UNUserNotificationCenter.currentNotificationCenter
     requestAuthorizationWithOptions:types
     completionHandler:^(BOOL granted, NSError *_Nullable error) {
@@ -244,7 +324,7 @@ RCT_EXPORT_METHOD(checkPermissions:(RCTResponseSenderBlock)callback)
     callback(@[RCTSettingsDictForUNNotificationSettings(NO, NO, NO, NO, NO, UNAuthorizationStatusNotDetermined)]);
     return;
   }
-  
+
   [UNUserNotificationCenter.currentNotificationCenter getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings * _Nonnull settings) {
     callback(@[RCTPromiseResolveValueForUNNotificationSettings(settings)]);
     }];
@@ -283,21 +363,27 @@ RCT_EXPORT_METHOD(scheduleLocalNotification:(UILocalNotification *)notification)
 
 RCT_EXPORT_METHOD(addNotificationRequest:(UNNotificationRequest*)request)
 {
-    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
-    [center addNotificationRequest:request
-                withCompletionHandler:^(NSError* _Nullable error) {
-        if (!error) {
-            NSLog(@"notifier request success");
-            }
-        }
-    ];
+    NSString *attachmentString = request.content.userInfo[@"attachmentUrl"];
+    if (attachmentString) {
+        NSURL *attachmentURL = [NSURL URLWithString:attachmentString];
+        [self loadAttachmentForURL:attachmentURL completionHandler:^(UNNotificationAttachment *attachment) {
+            UNMutableNotificationContent *content = [self notificationContentFromContent: request.content];
+            content.attachments = @[attachment];
+            UNNotificationRequest* notificationRequest = [UNNotificationRequest requestWithIdentifier: request.identifier
+                                                                                       content: content
+                                                                                       trigger: request.trigger];
+            [self fireNotificationRequest: notificationRequest];
+        }];
+    } else {
+        [self fireNotificationRequest: request];
+    }
 }
 
 RCT_EXPORT_METHOD(setNotificationCategories:(NSArray*)categories)
 {
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
     NSMutableSet<UNNotificationCategory *>* categorySet = nil;
-    
+
     if ([categories count] > 0) {
         categorySet = [NSMutableSet new];
         for(NSDictionary* category in categories){
@@ -365,7 +451,7 @@ RCT_EXPORT_METHOD(getInitialNotification:(RCTPromiseResolveBlock)resolve
     [self.bridge.launchOptions[UIApplicationLaunchOptionsRemoteNotificationKey] mutableCopy];
     UILocalNotification *initialLocalNotification =
     self.bridge.launchOptions[UIApplicationLaunchOptionsLocalNotificationKey];
-  
+
     if (initialNotification) {
       initialNotification[@"userInteraction"] = [NSNumber numberWithInt:1];
       initialNotification[@"remote"] = @YES;
@@ -396,7 +482,7 @@ RCT_EXPORT_METHOD(getPendingNotificationRequests: (RCTResponseSenderBlock)callba
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
     [center getPendingNotificationRequestsWithCompletionHandler:^(NSArray<UNNotificationRequest *> *_Nonnull requests) {
       NSMutableArray<NSDictionary *> *formattedRequests = [NSMutableArray new];
-      
+
       for (UNNotificationRequest *request in requests) {
           [formattedRequests addObject:[RCTConvert RCTFormatUNNotificationRequest:request]];
       }
@@ -426,7 +512,7 @@ RCT_EXPORT_METHOD(getDeliveredNotifications:(RCTResponseSenderBlock)callback)
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
     [center getDeliveredNotificationsWithCompletionHandler:^(NSArray<UNNotification *> *_Nonnull notifications) {
       NSMutableArray<NSDictionary *> *formattedNotifications = [NSMutableArray new];
-      
+
       for (UNNotification *notification in notifications) {
           [formattedNotifications addObject:[RCTConvert RCTFormatUNNotification:notification]];
       }
