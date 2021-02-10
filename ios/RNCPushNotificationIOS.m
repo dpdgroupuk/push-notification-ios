@@ -368,7 +368,11 @@ RCT_EXPORT_METHOD(addNotificationRequest:(UNNotificationRequest*)request)
         NSURL *attachmentURL = [NSURL URLWithString:attachmentString];
         [self loadAttachmentForURL:attachmentURL completionHandler:^(UNNotificationAttachment *attachment) {
             UNMutableNotificationContent *content = [self notificationContentFromContent: request.content];
-            content.attachments = @[attachment];
+
+            if(attachment){
+                content.attachments = @[attachment];
+            }
+
             UNNotificationRequest* notificationRequest = [UNNotificationRequest requestWithIdentifier: request.identifier
                                                                                        content: content
                                                                                        trigger: request.trigger];
