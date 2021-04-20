@@ -20,6 +20,8 @@ static NSString *const kRemoteNotificationRegistrationFailed = @"RemoteNotificat
 
 static NSString *const kErrorUnableToRequestPermissions = @"E_UNABLE_TO_REQUEST_PERMISSIONS";
 
+static NSDictionary *sLocalInitialNotification = nil;
+
 #if !TARGET_OS_TV
 @interface RNCPushNotificationIOS ()
 @property (nonatomic, strong) NSMutableDictionary *remoteNotificationCallbacks;
@@ -124,9 +126,11 @@ RCT_EXPORT_MODULE()
 
 + (void)didReceiveNotificationResponse:(UNNotificationResponse *)response
 API_AVAILABLE(ios(10.0)) {
+    sLocalInitialNotification = [RCTConvert RCTFormatUNNotificationResponse:response];
+
     [[NSNotificationCenter defaultCenter] postNotificationName:kLocalNotificationReceived
                                                       object:self
-                                                    userInfo:[RCTConvert RCTFormatUNNotificationResponse:response]];
+                                                    userInfo:sLocalInitialNotification];
 }
 
 - (void)handleLocalNotificationReceived:(NSNotification *)notification
@@ -453,15 +457,14 @@ RCT_EXPORT_METHOD(getInitialNotification:(RCTPromiseResolveBlock)resolve
 {
     NSMutableDictionary<NSString *, id> *initialNotification =
     [self.bridge.launchOptions[UIApplicationLaunchOptionsRemoteNotificationKey] mutableCopy];
-    UILocalNotification *initialLocalNotification =
-    self.bridge.launchOptions[UIApplicationLaunchOptionsLocalNotificationKey];
 
     if (initialNotification) {
       initialNotification[@"userInteraction"] = [NSNumber numberWithInt:1];
       initialNotification[@"remote"] = @YES;
       resolve(initialNotification);
-    } else if (initialLocalNotification) {
-      resolve([RCTConvert RCTFormatLocalNotification:initialLocalNotification]);
+    } else if (sLocalInitialNotification) {
+      resolve([sLocalInitialNotification copy]);
+      sLocalInitialNotification = nil;
     } else {
       resolve((id)kCFNull);
     }
